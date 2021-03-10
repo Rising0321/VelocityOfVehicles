@@ -9,6 +9,7 @@ from model.camera_calibration import get_parameters
 from model.cut_data import cutdata
 from model.detect_updated import detect
 from model.deep_sort.deep_sort import DeepSort
+from model.tracker import Sort, Iou
 from model.cal_flow import cal_flow
 from utils.draw import *
 from utils.load_data import *
@@ -17,6 +18,7 @@ import numpy as np
 import matplotlib
 import time
 import cv2
+import argparse
 
 matplotlib.use('TkAgg')
 np.random.seed(0)
@@ -37,13 +39,23 @@ def init_sum(sumin, sumout, qin, qout):
     return sumin, sumout
 
 if __name__ == '__main__':
-    name = 'demo_v1'
-    if not os.path.exists('data/images/' + name):
+    parser = argparse.ArgumentParser(description='buaa demo')
+    parser.add_argument('--name', dest='name', type=str, default='demo_v1')
+    parser.add_argument('--tr_type', dest='tracker_type', type=int, default=1)
+    parser.add_argument('--if_detect', dest='if_detect', default=True)
+
+    args = parser.parse_args()
+
+    name = args.name
+    tracker_type = args.tracker_type
+    if_detect = args.if_detect
+
+    if not os.path.exists('data/images/' + name) and if_detect:
         cutdata(name)
 
     print('==========================cut_data_done===============================')
 
-    if os.path.exists('data/' + name + '_result.txt'):
+    if not os.path.exists('data/' + name + '_result.txt') and if_detect:
         detect(name)
 
     print('==========================detect_done===============================')
@@ -59,7 +71,12 @@ if __name__ == '__main__':
     sumin = 0
     sumout = 0
 
-    mot_tracker = DeepSort(model_path="model/deep_sort/deep/checkpoint/ckpt.t7")  # 实例化SORT tracker
+    if (tracker_type == 1):
+        mot_tracker = DeepSort(model_path="model/deep_sort/deep/checkpoint/ckpt.t7")  # 实例化DEEPSORT tracker
+    elif (tracker_type == 2):
+        mot_tracker = Sort(max_age=3, min_hits=3, iou_threshold=0.3)  # 实例化 SORT tracker
+    else:
+        mot_tracker = Iou(max_age=3, min_hits=3, iou_threshold=0.3)  # 实例化 iou tracker
 
     seq_dets = np.loadtxt('data/' + name + '_result.txt', delimiter=',')  # 从txt文件中加载检测结果
 
@@ -80,7 +97,10 @@ if __name__ == '__main__':
 
             img_cv2 = cv2.imread(fn)
 
-            trackers = mot_tracker.update(dets[:, 0:4], dets[:, 4], img_cv2)
+            if (tracker_type == 1):
+                trackers = mot_tracker.update(dets[:, 0:4], dets[:, 4], img_cv2)
+            else:
+                trackers = mot_tracker.update(dets[:, 0:4])
 
             draw_boxes(img_cv2, trackers)
 
@@ -96,6 +116,14 @@ if __name__ == '__main__':
             draw_flow(sumin, sumout, line6, line7, img_cv2, frame, 0)
 
     total_time = time.time() - total_time
+    if (tracker_type == 1):
+        tracker_str = 'deep_sort'
+    elif (tracker_type == 2):
+        tracker_str = 'sort'
+    else:
+        tracker_str = 'iou'
+
+    print("Demo name: %s, tracker type: %s" % (name, tracker_str))
     print("Total Tracking took: %.3f seconds for %d frames or %.1f FPS" % (
         total_time, total_frames, total_frames / total_time))
 
